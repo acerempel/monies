@@ -20,7 +20,7 @@ async fn main() -> Result<(), eyre::Report> {
         .build(SqliteConnectionManager::file("database.db"))?;
     init_database(pool.get()?.deref())?;
     let app = Router::new()
-        .route("/transactions", routing::get(list_transactions))
+        .route("/transactions/list", routing::get(list_transactions))
         .route("/transactions/new", routing::post(create_transaction))
         .layer(Extension(pool))
         .layer(TraceLayer::new_for_http());
