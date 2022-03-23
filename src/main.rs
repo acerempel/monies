@@ -7,7 +7,7 @@ use axum_macros::debug_handler;
 use r2d2::{Pool, CustomizeConnection};
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Row, Connection};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use tracing::{info, Instrument, debug_span};
 
 #[tokio::main]
@@ -20,6 +20,7 @@ async fn main() -> Result<(), eyre::Report> {
     init_database(pool.get()?.deref())?;
     let app = Router::new()
         .route("/transactions", routing::get(list_transactions))
+        .route("/transactions/new", routing::post(create_transaction))
         .layer(Extension(pool));
     let addr = SocketAddr::from(([127, 0, 0, 1], 4000));
     info!("Listening on {}", addr);
@@ -70,6 +71,30 @@ impl<'a> TryFrom<&'a Row<'_>> for Transaction {
     }
 
     type Error = rusqlite::Error;
+}
+
+#[derive(Deserialize, Debug)]
+struct NewTransactionRequest {
+    payee: String,
+    description: String,
+}
+
+#[derive(Serialize)]
+struct NewTransactionResponse {
+    id: i64,
+}
+
+#[tracing::instrument]
+async fn create_transaction(pool: Extension<Pool<SqliteConnectionManager>>, Json(trans): Json<NewTransactionRequest>) -> Result<Json<NewTransactionResponse>, String> {
+    let id = tokio::task::spawn_blocking(move || -> Result<i64, eyre::Report> {
+        let conn = pool.get()?;
+        conn.prepare_cached("INSERT INTO transactions (payee, description) VALUES (?, ?)")?
+            .execute([trans.payee, trans.description])?;
+        Ok(conn.last_insert_rowid())
+    }).instrument(debug_span!("db transaction create"))
+        .await
+        .map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    Ok(Json(NewTransactionResponse { id }))
 }
 
 fn init_database(conn: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
