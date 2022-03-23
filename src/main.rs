@@ -8,9 +8,12 @@ use r2d2::{Pool, CustomizeConnection};
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Row, Connection};
 use serde::Serialize;
+use tracing::{info, Instrument, debug_span};
 
 #[tokio::main]
 async fn main() -> Result<(), eyre::Report> {
+    tracing_subscriber::fmt::init();
+    info!("Sqlite version: {}", rusqlite::version());
     let pool = Pool::builder()
         .connection_customizer(Box::new(ConnectionCustomizer))
         .build(SqliteConnectionManager::file("database.db"))?;
@@ -19,6 +22,7 @@ async fn main() -> Result<(), eyre::Report> {
         .route("/transactions", routing::get(list_transactions))
         .layer(Extension(pool));
     let addr = SocketAddr::from(([127, 0, 0, 1], 4000));
+    info!("Listening on {}", addr);
     axum::Server::bind(&addr).serve(app.into_make_service()).await?;
     Ok(())
 }
@@ -37,6 +41,7 @@ impl CustomizeConnection<Connection, rusqlite::Error> for ConnectionCustomizer {
 }
 
 #[debug_handler]
+#[tracing::instrument]
 async fn list_transactions(pool: Extension<Pool<SqliteConnectionManager>>) -> Result<Json<Vec<Transaction>>, String> {
     let txns = tokio::task::spawn_blocking(move || -> Result<Vec<Transaction>, eyre::Report>{
         let conn = pool.get()?;
@@ -45,7 +50,8 @@ async fn list_transactions(pool: Extension<Pool<SqliteConnectionManager>>) -> Re
             .query_map([], |row| row.try_into())?
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
         Ok(txns)
-    }).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    }).instrument(debug_span!("db fetch transactions")).await
+        .map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
     Ok(Json(txns))
 }
 
