@@ -33,9 +33,11 @@ struct ConnectionCustomizer;
 impl CustomizeConnection<Connection, rusqlite::Error> for ConnectionCustomizer {
     fn on_acquire(&self, conn: &mut Connection) -> Result<(), rusqlite::Error> {
         conn.execute("PRAGMA foreign_keys = ON", [])?;
-        let mut res = 0;
-        conn.query_row("PRAGMA foreign_keys", [], |r| { res = r.get(0)?; Ok(()) })?;
-        assert_eq!(res, 1, "PRAGMA foreign_keys not supported");
+        #[cfg(debug_assertions)] {
+            let mut res = 0;
+            conn.query_row("PRAGMA foreign_keys", [], |r| { res = r.get(0)?; Ok(()) })?;
+            assert_eq!(res, 1, "PRAGMA foreign_keys not supported");
+        }
         Ok(())
     }
 }
