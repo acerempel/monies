@@ -45,9 +45,11 @@ impl CustomizeConnection<Connection, rusqlite::Error> for ConnectionCustomizer {
     }
 }
 
+type DbPool = Extension<Pool<SqliteConnectionManager>>;
+
 #[debug_handler]
 #[tracing::instrument]
-async fn list_transactions(pool: Extension<Pool<SqliteConnectionManager>>) -> Result<Json<Vec<Transaction>>, String> {
+async fn list_transactions(pool: DbPool) -> Result<Json<Vec<Transaction>>, String> {
     let txns = tokio::task::spawn_blocking(move || -> Result<Vec<Transaction>, eyre::Report>{
         let conn = pool.get()?;
         let txns: Vec<Transaction> = conn
@@ -87,7 +89,7 @@ struct NewTransactionResponse {
 }
 
 #[tracing::instrument]
-async fn create_transaction(pool: Extension<Pool<SqliteConnectionManager>>, Json(trans): Json<NewTransactionRequest>) -> Result<Json<NewTransactionResponse>, String> {
+async fn create_transaction(pool: DbPool, Json(trans): Json<NewTransactionRequest>) -> Result<Json<NewTransactionResponse>, String> {
     let id = tokio::task::spawn_blocking(move || -> Result<i64, eyre::Report> {
         let conn = pool.get()?;
         conn.prepare_cached("INSERT INTO transactions (payee, description) VALUES (?, ?)")?
