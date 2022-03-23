@@ -8,6 +8,7 @@ use r2d2::{Pool, CustomizeConnection};
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Row, Connection};
 use serde::{Serialize, Deserialize};
+use tower_http::trace::TraceLayer;
 use tracing::{info, Instrument, debug_span};
 
 #[tokio::main]
@@ -21,7 +22,8 @@ async fn main() -> Result<(), eyre::Report> {
     let app = Router::new()
         .route("/transactions", routing::get(list_transactions))
         .route("/transactions/new", routing::post(create_transaction))
-        .layer(Extension(pool));
+        .layer(Extension(pool))
+        .layer(TraceLayer::new_for_http());
     let addr = SocketAddr::from(([127, 0, 0, 1], 4000));
     info!("Listening on {}", addr);
     axum::Server::bind(&addr).serve(app.into_make_service()).await?;
