@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::ops::Deref;
+use std::path::PathBuf;
 
 use axum::extract::Extension;
 use axum::{Router, routing};
@@ -9,24 +10,35 @@ use rusqlite::Connection;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
+use crate::config::Config;
+
 #[tokio::main]
 async fn main() -> Result<(), eyre::Report> {
     tracing_subscriber::fmt::init();
+    let config_path = "kleingeld.toml";
+    let config = Config::get(config_path.as_ref())?;
     info!("Sqlite version: {}", rusqlite::version());
+    let connection_manager = if config.db_file == PathBuf::from("memory") {
+        SqliteConnectionManager::memory()
+    } else {
+        SqliteConnectionManager::file(config.db_file)
+    };
     let pool = Pool::builder()
         .connection_customizer(Box::new(ConnectionCustomizer))
-        .build(SqliteConnectionManager::file("database.db"))?;
+        .build(connection_manager)?;
     init_database(pool.get()?.deref())?;
     let app = Router::new()
         .route("/transactions/list", routing::get(transactions::list))
         .route("/transactions/new", routing::post(transactions::create))
         .layer(Extension(pool))
         .layer(TraceLayer::new_for_http());
-    let addr = SocketAddr::from(([127, 0, 0, 1], 4000));
+    let addr = SocketAddr::from((config.address, config.port));
     info!("Listening on {}", addr);
     axum::Server::bind(&addr).serve(app.into_make_service()).await?;
     Ok(())
 }
+
+mod config;
 
 #[derive(Debug)]
 struct ConnectionCustomizer;
